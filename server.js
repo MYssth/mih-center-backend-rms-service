@@ -46,20 +46,10 @@ router.route("/health").get((request, response) => {
 // let fileCounter = 0;
 let taskId = "";
 
-const UPLOAD_PATH = path.join(process.env.imgPath, "/RMS");
-mkdirp.sync(path.join(process.env.imgPath, "/RMS"));
+// const UPLOAD_PATH = path.join(process.env.imgPath, "/RMS");
+// mkdirp.sync(path.join(process.env.imgPath, "/RMS"));
 
-const storage = multer.diskStorage({
-  destination: (req, file, done) => {
-    done(null, UPLOAD_PATH);
-  },
-  filename: (req, file, done) => {
-    done(null, uuid() + "___" + file.originalname);
-    // fileCounter += 1;
-    // done(null, fileCounter + ".jpg");
-    // done(null, "nouse.jpg");
-  },
-});
+const storage = multer.memoryStorage();
 
 const limits = {
   fileSize: 5 * 1024 * 1024,
@@ -73,20 +63,19 @@ const fileFilter = (request, file, done) => {
   }
 };
 
-const upload = multer({ storage, limits, fileFilter }).array("image", 5);
+const upload = multer({ storage, limits, fileFilter }).array("files",5);
 
-async function imgUpload(file, index) {
-  // console.log("Image " + index + " check");
-  if (!file) {
-    console.log("No image found to upload");
-  } else {
-    const newFilePath = path.join(UPLOAD_PATH, taskId + "_" + index + ".jpg");
-    // save newFilePath in your db as image path
-    await sharp(file.path).resize().jpeg({ quality: 50 }).toFile(newFilePath);
-    fs.unlinkSync(file.path);
-
-    // console.log("Image " + index + " upload complete");
-  }
+// Function to convert image to base64
+async function imageToBase64(filePath) {
+  return new Promise((resolve, reject) => {
+    fs.readFile(filePath, 'base64', (err, data) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
+  });
 }
 
 async function genNewTaskId() {
@@ -130,13 +119,17 @@ router.route("/task").post(async (request, response) => {
     try {
       const data = request.body;
       const files = request.files;
-      console.log("Image upload");
+
+      const base64Files = [];
+
       for (let i = 0; i < files.length; i += 1) {
-        await imgUpload(files[i], i + 1);
+        const fileBuffer = await sharp(files[i].buffer).resize().jpeg({ quality: 50 }).toBuffer();
+        const base64String = fileBuffer.toString('base64');
+        base64Files.push(base64String);
       }
-      console.log("Image upload complete");
+
       dboperations
-        .newTask(data, taskId, request.files.length)
+        .newTask(data, taskId, base64Files)
         .then((result) => {
           response.json(result);
         })
@@ -176,6 +169,79 @@ router.route("/task/:id").get((request, response) => {
     });
 });
 
+router.route("/taskByStatus/:statusId").get((request, response) => {
+  dboperations
+    .getTaskByStatus(request.params.statusId)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/reviewTask/:psnId").get((request, response) => {
+  dboperations
+    .getReviewTask(request.params.psnId)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/deptReview/:id").get((request, response) => {
+  dboperations
+    .getDeptReviewById(request.params.id)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/reviewCos").get((request, response) => {
+  dboperations
+    .getReviewCos()
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/reReviewDeptByTask/:id").get((request, response) => {
+  dboperations
+    .getReReviewDeptByTaskId(request.params.id)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/deptReview").post((request, response) => {
+  let reviewData = { ...request.body };
+  dboperations
+    .addReviewTask(reviewData)
+    .then((result) => {
+      response.status(201).json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.setStatus(500);
+    });
+});
+
 router.route("/task").patch((request, response) => {
   let data = { ...request.body };
   dboperations
@@ -189,10 +255,23 @@ router.route("/task").patch((request, response) => {
     });
 });
 
-router.route("/cnsdrtask").patch((request, response) => {
+router.route("/considerTask").patch((request, response) => {
   let data = { ...request.body };
   dboperations
     .considerTask(data)
+    .then((result) => {
+      response.status(201).json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.setStatus(500);
+    });
+});
+
+router.route("/evaluateTask").patch((request, response) => {
+  let data = { ...request.body };
+  dboperations
+    .evaluateTask(data)
     .then((result) => {
       response.status(201).json(result);
     })
@@ -217,6 +296,78 @@ router.route("/type").get((request, response) => {
 router.route("/subtype").get((request, response) => {
   dboperations
     .getSubType()
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/typesubject").get((request, response) => {
+  dboperations
+    .getTypeSubject()
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/typesubject/:typeId").get((request, response) => {
+  dboperations
+    .getTypeSubjectByTypeId(request.params.typeId)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/level/:typeId").get((request, response) => {
+  dboperations
+    .getLevelByTypeId(request.params.typeId)
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/tool").get((request, response) => {
+  dboperations
+    .getTool()
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/ref").get((request, response) => {
+  dboperations
+    .getRef()
+    .then((result) => {
+      response.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      response.sendStatus(500);
+    });
+});
+
+router.route("/getimage/:task_id").get((request, response) => {
+  dboperations
+    .getImage(request.params.task_id)
     .then((result) => {
       response.json(result);
     })
